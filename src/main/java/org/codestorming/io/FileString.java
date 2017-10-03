@@ -40,8 +40,6 @@ public class FileString implements CharSequence {
 
 	/**
 	 * The input stream to load.
-	 *
-	 * @since 1.1
 	 */
 	protected InputStream inputStream;
 
