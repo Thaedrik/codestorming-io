@@ -1,0 +1,25 @@
+group 'org.codestorming'
+version '1.0.0'
+
+apply plugin: 'java'
+
+sourceCompatibility = 1.7
+
+repositories {
+    ivy {
+        url = "https://ivy.codestorming.org/artifactory/ivy-release"
+    }
+}
+
+uploadArchives {
+
+    repositories {
+        ivy {
+            url = "https://ivy.codestorming.org/artifactory/ivy-release"
+            credentials {
+                username findProperty("cs_ivy_username") ? cs_ivy_username : ""
+                password findProperty("cs_ivy_password") ? cs_ivy_password : ""
+            }
+        }
+    }
+}
