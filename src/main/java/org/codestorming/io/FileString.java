@@ -22,7 +22,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.util.Objects;
-import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 
 /**
@@ -91,7 +90,7 @@ public class FileString implements CharSequence {
 	}
 
 	/**
-	 * Creates a new {@code FileString} with the given {@link File file}.
+	 * Creates a new {@code FileString} with the given {@link File file} and UTF-8 encoding.
 	 *
 	 * @param file The file to load as a {@link CharSequence}.
 	 * @throws NullPointerException if the given file is {@code null}.
@@ -103,36 +102,33 @@ public class FileString implements CharSequence {
 	}
 
 	private synchronized void load() {
-		loader = new FutureTask<>(new Callable<Boolean>() {
-			@Override
-			public Boolean call() throws Exception {
-				final CharsetDecoder decoder = charset.newDecoder()
-													  .onMalformedInput(CodingErrorAction.REPLACE)
-													  .onUnmappableCharacter(CodingErrorAction.REPLACE);
-				InputStream input = null;
-				byte[] buffer = new byte[1024];
-				try {
-					content = new char[FileString.this.getInitialCapacity()];
-					if (file != null) {
-						input = new FileInputStream(file);
-					} else if (inputStream != null) {
-						input = inputStream;
-					}
-					int len = 0;
-					while ((len = input.read(buffer)) > 0) {
-						final CharBuffer charBuffer = decoder.decode(ByteBuffer.wrap(buffer, 0, len));
-						final int length = charBuffer.length();
-						FileString.this.ensureCapacity(size + length);
-						charBuffer.get(content, size, length);
-						size += length;
-					}
-					return true;
-				} catch (IOException e) {
-					System.err.println(e.getMessage());
-					return false;
-				} finally {
-					FileHelper.close(input);
+		loader = new FutureTask<>(() -> {
+			final CharsetDecoder decoder = charset.newDecoder()
+												  .onMalformedInput(CodingErrorAction.REPLACE)
+												  .onUnmappableCharacter(CodingErrorAction.REPLACE);
+			InputStream input = null;
+			byte[] buffer = new byte[1024];
+			try {
+				content = new char[FileString.this.getInitialCapacity()];
+				if (file != null) {
+					input = new FileInputStream(file);
+				} else if (inputStream != null) {
+					input = inputStream;
 				}
+				int len;
+				while ((len = input.read(buffer)) > 0) {
+					final CharBuffer charBuffer = decoder.decode(ByteBuffer.wrap(buffer, 0, len));
+					final int length = charBuffer.length();
+					FileString.this.ensureCapacity(size + length);
+					charBuffer.get(content, size, length);
+					size += length;
+				}
+				return true;
+			} catch (IOException e) {
+				System.err.println(e.getMessage());
+				return false;
+			} finally {
+				FileHelper.close(input);
 			}
 		});
 		loader.run();
@@ -141,7 +137,7 @@ public class FileString implements CharSequence {
 	/**
 	 * Ensures the capacity of the {@code content} array can accept {@link #BUFFER_SIZE} new elements.
 	 */
-	protected synchronized void ensureCapacity(int minimumCapacity) {
+	private void ensureCapacity(int minimumCapacity) {
 		if (content.length < minimumCapacity) {
 			int newCapacity = (int) ((content.length) * (1 + LOAD_FACTOR));
 			if (newCapacity < minimumCapacity) {
@@ -234,29 +230,28 @@ public class FileString implements CharSequence {
 	 * <p>
 	 * This method will do nothing if this {@code FileString} has been created from an {@link InputStream}.
 	 *
-	 * @throws IOException
+	 * @throws IOException if an error occurs while writing to the file.
 	 */
 	public synchronized void flush() throws IOException {
 		if (file == null || !ready()) {
 			return;
 		}// else
 
-		FileOutputStream fos = null;
-		try {
-			fos = new FileOutputStream(file, false);
-			fos.write(toString().getBytes());
-		} finally {
-			FileHelper.close(fos);
+		try (FileOutputStream fos = new FileOutputStream(file, false)) {
+			fos.write(toString().getBytes(charset));
 		}
 	}
 
 	@Override
 	public String toString() {
+		if (!ready()) {
+			return "FILE-STRING NOT LOADED";
+		}// else
 		return new String(content, 0, size);
 	}
 
 	@Override
-	public synchronized boolean equals(Object anObject) {
+	public boolean equals(Object anObject) {
 		if (!ready()) {
 			return false;
 		}// else
